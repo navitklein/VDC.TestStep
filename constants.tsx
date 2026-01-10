@@ -128,7 +128,14 @@ export interface TestLine {
   duration: string;
   status: 'Passed' | 'Failed' | 'Running' | 'Pending';
   included: boolean;
+  goalName: string;
+  hwConfig: string;
+  swConfig: string;
 }
+
+const HW_CONFIGS = ['SBF1S2', 'SBF5S2', 'SBF3S2', 'SBF7S1', 'SBF8S1'];
+const SW_CONFIGS = ['A', 'B', 'C', 'D', 'E', 'F'];
+const GOAL_NAMES = ['Sanity_Memory_Memicals', 'coldWarmResetSolar', 'Sanity_Mesh_Pysec', 'Sanity_PCIE_Rocket'];
 
 export const MOCK_TEST_LINES: TestLine[] = Array.from({ length: 450 }, (_, i) => ({
   id: `TL_${1000 + i}`,
@@ -136,7 +143,10 @@ export const MOCK_TEST_LINES: TestLine[] = Array.from({ length: 450 }, (_, i) =>
   sut: `SUT_NODE_0${(i % 5) + 1}`,
   duration: `${(Math.random() * 5 + 1).toFixed(1)}s`,
   status: i < 300 ? 'Passed' : i < 350 ? 'Failed' : i < 400 ? 'Running' : 'Pending',
-  included: true
+  included: true,
+  goalName: GOAL_NAMES[i % GOAL_NAMES.length],
+  hwConfig: HW_CONFIGS[i % HW_CONFIGS.length],
+  swConfig: SW_CONFIGS[i % SW_CONFIGS.length],
 }));
 
 export const ICONS = {
