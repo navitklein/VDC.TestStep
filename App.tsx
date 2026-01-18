@@ -159,6 +159,23 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
+    if (currentTestPhase === 'REVIEW') {
+      setCollapsedBuildSections(prev => ({ ...prev, testMatrix: false }));
+    } else if (currentTestPhase === 'RESULT') {
+      setCollapsedBuildSections({
+        settings: true,
+        deps: true,
+        knobs: true,
+        straps: true,
+        logs: true,
+        heatMap: true,
+        testMatrix: true,
+        resolution: false
+      });
+    }
+  }, [currentTestPhase]);
+
+  useEffect(() => {
     let interval: any;
     const isBuildExecution = (activeTab === 'Quick Builds' || activeTab === 'Workflows') && (currentTestPhase !== 'DONE');
     const isRunningOrExecuting = currentTestPhase === 'EXECUTION';
@@ -198,6 +215,31 @@ const App: React.FC = () => {
       resolution: true
     });
   }, []);
+
+  const expandAllPanels = useCallback(() => {
+    setCollapsedBuildSections({
+      settings: false,
+      deps: false,
+      knobs: false,
+      straps: false,
+      logs: false,
+      heatMap: false,
+      testMatrix: false,
+      resolution: false
+    });
+  }, []);
+
+  const areAllPanelsCollapsed = useMemo(() => {
+    return Object.values(collapsedBuildSections).every(val => val === true);
+  }, [collapsedBuildSections]);
+
+  const toggleAllPanels = useCallback(() => {
+    if (areAllPanelsCollapsed) {
+      expandAllPanels();
+    } else {
+      collapseAllAuxiliaryPanels();
+    }
+  }, [areAllPanelsCollapsed, expandAllPanels, collapseAllAuxiliaryPanels]);
 
   const cycleBuildState = () => {
     if (currentTestPhase !== 'DONE') {
@@ -517,8 +559,8 @@ const App: React.FC = () => {
     const isDone = phase === 'DONE';
 
     const isSuccess = isDone && resOutcome === 'PASSED';
-    const cardBg = isSuccess ? 'bg-emerald-50/60' : (isDone && resOutcome === 'FAILED') ? 'bg-rose-50/60' : 'bg-blue-50/60';
-    const statusColor = isSuccess ? 'bg-emerald-600' : (isDone && resOutcome === 'FAILED') ? 'bg-rose-600' : 'bg-brand';
+    const cardBg = isSuccess ? 'bg-emerald-50/60' : (isDone && resOutcome === 'FAILED') ? 'bg-rose-50/60' : (isReview || isResult) ? 'bg-orange-50/60' : 'bg-blue-50/60';
+    const statusColor = isSuccess ? 'bg-emerald-600' : (isDone && resOutcome === 'FAILED') ? 'bg-rose-600' : (isReview || isResult) ? 'bg-orange-500' : 'bg-brand';
 
     const kpis = useMemo(() => {
       if (isDiscovery || isSubmission) return [];
@@ -556,7 +598,7 @@ const App: React.FC = () => {
                 </button>
                 <div className="flex flex-col">
                   <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">DRIVE REVIEW</span>
-                  <h2 className="text-[14px] font-black text-slate-800 uppercase tracking-tight">Testlines Execution Matrix</h2>
+                  <h2 className="text-[14px] font-black text-slate-800 uppercase tracking-tight">Testlines</h2>
                 </div>
                 {matrixFilter && (
                    <div className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
@@ -616,10 +658,11 @@ const App: React.FC = () => {
                         {TEST_PHASE_ORDER.map((p, idx) => {
                           const isCurrent = p === phase;
                           const isPast = activeIndex > idx;
+                          const currentColor = isCurrent && (isReview || isResult) ? 'bg-orange-500' : 'bg-blue-600';
                           return (
                             <div 
                               key={p} 
-                              className={`w-5 h-1 rounded-full transition-all duration-300 ${isCurrent ? 'bg-blue-600 animate-pulse scale-y-125' : isPast ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                              className={`w-5 h-1 rounded-full transition-all duration-300 ${isCurrent ? `${currentColor} animate-pulse scale-y-125` : isPast ? 'bg-emerald-500' : 'bg-slate-300'}`}
                             />
                           );
                         })}
@@ -664,10 +707,10 @@ const App: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border shadow-sm shrink-0 transition-all duration-500 ${isDone ? 'bg-slate-100/50 border-slate-200' : 'bg-white/50 border-slate-100/50'}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${isDone ? 'bg-slate-400' : 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`} />
-                    <span className={`text-[7px] font-black uppercase tracking-[0.1em] ${isDone ? 'text-slate-400' : 'text-slate-500'}`}>
-                      NGA: {isDone ? 'DISCONNECTED' : 'ONLINE'}
+                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border shadow-sm shrink-0 transition-all duration-500 ${(isExecution || isResult) ? 'bg-white/50 border-slate-100/50' : 'bg-slate-100/50 border-slate-200'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${(isExecution || isResult) ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-400'}`} />
+                    <span className={`text-[7px] font-black uppercase tracking-[0.1em] ${(isExecution || isResult) ? 'text-slate-500' : 'text-slate-400'}`}>
+                      NGA: {(isExecution || isResult) ? 'ONLINE' : 'DISCONNECTED'}
                     </span>
                   </div>
                 </div>
@@ -676,7 +719,7 @@ const App: React.FC = () => {
                     <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">TEST STEP PHASE</span>
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-black text-slate-800 uppercase tracking-tight">
-                        {phase.replace('_', ' ')}
+                        {isReview ? 'Testline Inclusion' : isResult ? 'Final Resolution' : phase.replace('_', ' ')}
                       </span>
                       {isReview && (
                         <div className="relative" ref={guidancePopoverRef}>
@@ -702,6 +745,16 @@ const App: React.FC = () => {
                         </div>
                       )}
                     </div>
+                    {isReview && (
+                      <span className="text-[8px] font-medium text-slate-500 mt-1.5 leading-tight max-w-[300px]">
+                        All testlines are included by default. Exclude any you don't want to run
+                      </span>
+                    )}
+                    {isResult && (
+                      <span className="text-[8px] font-medium text-slate-500 mt-1.5 leading-tight max-w-[300px]">
+                        Execution is complete. Choose how this step should be resolved.
+                      </span>
+                    )}
                   </div>
                   {(isExecution || isResult || isDone) && (
                     <div className="flex flex-col items-end gap-0.5">
@@ -713,12 +766,15 @@ const App: React.FC = () => {
                   )}
                 </div>
              </div>
-             <div className="h-1.5 w-full bg-slate-900/5 shrink-0 overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-1000 ease-out ${statusColor} ${(isDiscovery || isSubmission) ? 'animate-indeterminate-progress' : ''}`} 
-                  style={(isDiscovery || isSubmission) ? {} : { width: isDone ? '100%' : '45%' }}
-                />
-             </div>
+             {!isReview && !isResult && (
+               <div className="h-1.5 w-full bg-slate-900/5 shrink-0 overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-1000 ease-out ${statusColor} ${(isDiscovery || isSubmission) ? 'animate-indeterminate-progress' : ''}`} 
+                    style={(isDiscovery || isSubmission) ? {} : { width: isDone ? '100%' : '45%' }}
+                  />
+               </div>
+             )}
+             {(isReview || isResult) && <div className="h-1.5 w-full bg-orange-100 shrink-0" />}
           </div>
           <div className="col-span-5 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-[110px] relative overflow-hidden group">
              <div className="flex flex-col items-center flex-1 justify-center mt-0.5 px-6">
@@ -788,7 +844,27 @@ const App: React.FC = () => {
               <div className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
               <span className="text-[10px] font-black uppercase tracking-[0.2em]">Calculating Real-time Metrics...</span>
             </div>
-          )}
+          )}        </div>
+
+        <div className="flex items-center justify-between shrink-0 mb-1">
+          <h2 className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Test Details</h2>
+          <button 
+            onClick={toggleAllPanels} 
+            className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-[9px] font-black text-slate-600 uppercase transition-all flex items-center gap-1.5"
+            title={areAllPanelsCollapsed ? "Expand all panels" : "Collapse all panels"}
+          >
+            {areAllPanelsCollapsed ? (
+              <>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                Expand All
+              </>
+            ) : (
+              <>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                Collapse All
+              </>
+            )}
+          </button>
         </div>
 
         <div className="flex-1 overflow-hidden relative group">
@@ -846,12 +922,20 @@ const App: React.FC = () => {
                 <div onClick={() => toggleBuildSection('resolution')} className="px-5 py-2.5 border-b border-amber-100 flex items-center justify-between bg-amber-50/40 cursor-pointer">
                   <div className="flex items-center gap-3">
                     <div className="w-1 h-3 bg-amber-500 rounded-full" />
-                    <span className="text-[10px] font-black text-amber-900 uppercase tracking-widest">Manual Resolution Requirement</span>
+                    <span className="text-[10px] font-black text-amber-900 uppercase tracking-widest">Resolve Step</span>
+                    <span className="px-2.5 py-1 bg-orange-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full shadow-sm">
+                      Resolution required
+                    </span>
                   </div>
                   <ICONS.ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${collapsedBuildSections.resolution ? '' : 'rotate-90'}`} />
                 </div>
                 {!collapsedBuildSections.resolution && (
                   <div className="animate-in slide-in-from-top-2 duration-300">
+                    <div className="px-5 py-3 bg-amber-50/20 border-b border-amber-50">
+                      <p className="text-[10px] font-medium text-slate-600 leading-relaxed">
+                        This resolution determines the final status of the step.
+                      </p>
+                    </div>
                     <div className="p-4 grid grid-cols-12 gap-6 bg-white">
                       <div className="col-span-3 flex flex-col gap-2">
                         <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">OUTCOME</span>
@@ -860,13 +944,13 @@ const App: React.FC = () => {
                             onClick={() => setResOutcome('PASSED')}
                             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all font-black uppercase text-[9px] ${resOutcome === 'PASSED' ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-emerald-200 hover:bg-emerald-50/20'}`}
                           >
-                            Manual Pass
+                            Mark as pass
                           </button>
                           <button 
                             onClick={() => setResOutcome('FAILED')}
                             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all font-black uppercase text-[9px] ${resOutcome === 'FAILED' ? 'bg-rose-600 border-rose-600 text-white shadow-md' : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-rose-200 hover:bg-rose-50/20'}`}
                           >
-                            Manual Fail
+                            Mark as fail
                           </button>
                         </div>
                       </div>
@@ -931,8 +1015,13 @@ const App: React.FC = () => {
                     <div className="flex items-center gap-3">
                       <div className="w-1 h-3 bg-brand rounded-full" />
                       <span className="text-[11px] font-black text-slate-800 uppercase tracking-widest">
-                        Testlines Execution Matrix {matrixFilter && `(Filtered)`}
+                        Testlines {matrixFilter && `(Filtered)`}
                       </span>
+                      {isReview && (
+                        <span className="px-2.5 py-1 bg-orange-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full shadow-sm">
+                          Check before continuing
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                        <button 
