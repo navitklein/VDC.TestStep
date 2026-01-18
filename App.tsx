@@ -10,7 +10,7 @@ const TEST_PHASE_ORDER: TestStepPhaseId[] = ['DISCOVERY', 'REVIEW', 'SUBMISSION'
 
 type EdgeCaseId = 'NORMAL' | 'LONG_BASELINE' | 'LONG_TARGET' | 'LONG_BOTH';
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 25; // Increased for full view
 
 const HW_CONFIGS = ['SBF1S2', 'SBF5S2', 'SBF3S2', 'SBF7S1', 'SBF8S1'];
 const SW_CONFIGS = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -42,6 +42,8 @@ const App: React.FC = () => {
   const [edgeCaseId, setEdgeCaseId] = useState<EdgeCaseId>('NORMAL');
   const [isWorkflowSidebarCollapsed, setIsWorkflowSidebarCollapsed] = useState(false);
   const [isPhaseMenuOpen, setIsPhaseMenuOpen] = useState(false);
+  const [isTestMatrixFullView, setIsTestMatrixFullView] = useState(false);
+  const [showReviewGuidance, setShowReviewGuidance] = useState(false);
   
   const [showAllDeps, setShowAllDeps] = useState(false);
   const [depsPage, setDepsPage] = useState(1);
@@ -65,14 +67,15 @@ const App: React.FC = () => {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const phaseMenuRef = useRef<HTMLDivElement>(null);
+  const guidancePopoverRef = useRef<HTMLDivElement>(null);
 
   const displayedDeps = useMemo(() => {
     return showAllDeps ? MOCK_BUILD_DEPS : MOCK_BUILD_DEPS.filter(d => d.isModified);
   }, [showAllDeps]);
 
   const paginatedDeps = useMemo(() => {
-    const start = (depsPage - 1) * ITEMS_PER_PAGE;
-    return displayedDeps.slice(start, start + ITEMS_PER_PAGE);
+    const start = (depsPage - 1) * 10; // Keeping 10 for deps
+    return displayedDeps.slice(start, start + 10);
   }, [displayedDeps, depsPage]);
 
   // Knobs Filtering & Pagination
@@ -90,8 +93,8 @@ const App: React.FC = () => {
   }, [showAllKnobs, knobsSearch]);
 
   const paginatedKnobs = useMemo(() => {
-    const start = (knobsPage - 1) * ITEMS_PER_PAGE;
-    return filteredKnobs.slice(start, start + ITEMS_PER_PAGE);
+    const start = (knobsPage - 1) * 10;
+    return filteredKnobs.slice(start, start + 10);
   }, [filteredKnobs, knobsPage]);
 
   // Filtering for table drill-down
@@ -101,7 +104,7 @@ const App: React.FC = () => {
       const matchGoal = matrixFilter.goal ? line.goalName === matrixFilter.goal : true;
       const matchHW = matrixFilter.hw ? line.hwConfig === matrixFilter.hw : true;
       const matchSW = matrixFilter.sw ? line.swConfig === matrixFilter.sw : true;
-      return matchGoal && matrixFilter.goal ? matchGoal : true;
+      return matchGoal && matchHW && matchSW;
     });
   }, [testLines, matrixFilter]);
 
@@ -110,8 +113,8 @@ const App: React.FC = () => {
     return filteredTestLines.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredTestLines, testLinesPage]);
 
-  const totalDepsPages = Math.ceil(displayedDeps.length / ITEMS_PER_PAGE);
-  const totalKnobsPages = Math.ceil(filteredKnobs.length / ITEMS_PER_PAGE);
+  const totalDepsPages = Math.ceil(displayedDeps.length / 10);
+  const totalKnobsPages = Math.ceil(filteredKnobs.length / 10);
   const totalTestLinesPages = Math.ceil(filteredTestLines.length / ITEMS_PER_PAGE);
 
   useEffect(() => {
@@ -135,6 +138,9 @@ const App: React.FC = () => {
     function handleClickOutside(event: MouseEvent) {
       if (phaseMenuRef.current && !phaseMenuRef.current.contains(event.target as Node)) {
         setIsPhaseMenuOpen(false);
+      }
+      if (guidancePopoverRef.current && !guidancePopoverRef.current.contains(event.target as Node)) {
+        setShowReviewGuidance(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -226,7 +232,6 @@ const App: React.FC = () => {
         setResolutionReason("System-triggered auto-completion during simulation.");
       }
       collapseAllAuxiliaryPanels();
-    // Fix: Redundant comparison removed. nextPhase is guaranteed not to be 'DONE' here.
     } else {
       setResOutcome(null);
       setResolutionReason("");
@@ -286,18 +291,6 @@ const App: React.FC = () => {
     const baselineName = isUnifiedPatch ? baselineNameOrig : `IFWI ${baselineNameOrig}`;
     const targetName = isUnifiedPatch ? targetNameOrig : `IFWI ${targetNameOrig}`;
 
-    const kpis = isUnifiedPatch 
-      ? [
-          { label: 'Dependencies Changes', val: `${MOCK_BUILD_DEPS.filter(d => d.isModified).length}/${MOCK_BUILD_DEPS.length}` },
-          ...(isSuccess ? [{ label: 'Package Size', val: '4KB' }] : [])
-        ]
-      : [
-          { label: 'Dep. Changes', val: `${MOCK_BUILD_DEPS.filter(d => d.isModified).length}/${MOCK_BUILD_DEPS.length}` },
-          { label: 'Knobs overrides', val: `${MOCK_KNOBS.filter(k => k.isOverridden).length}` },
-          { label: 'Straps overrides', val: `${MOCK_STRAPS.length}` },
-          ...(isSuccess ? [{ label: 'Package Size', val: '32MB' }] : [])
-        ];
-
     return (
       <div className="flex flex-col space-y-3 pb-20 max-w-[1600px] mx-auto animate-in fade-in duration-500 h-full overflow-hidden relative">
         <div className="flex items-center justify-between shrink-0 mb-0.5">
@@ -309,9 +302,6 @@ const App: React.FC = () => {
              <div className="flex items-center gap-1.5">
                <button onClick={cycleDemoPhase} className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-[9px] font-black text-slate-600 uppercase transition-all flex items-center gap-1.5 group">
                   Cycle State <ICONS.ChevronRight className="w-2 h-2 group-hover:translate-x-0.5 transition-transform" />
-               </button>
-               <button onClick={cycleEdgeCase} className="px-3 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded text-[9px] font-black text-blue-600 uppercase transition-all flex items-center gap-1.5 group">
-                  Edge Case: {edgeCaseId} <ICONS.Filter className="w-2.5 h-2.5" />
                </button>
              </div>
           </div>
@@ -458,6 +448,65 @@ const App: React.FC = () => {
     );
   };
 
+  const renderTestMatrixContent = (fullView = false) => (
+    <div className={`flex flex-col h-full ${fullView ? 'bg-white rounded-xl' : ''}`}>
+      <div className="overflow-x-auto flex-1">
+        <table className="w-full text-left text-[11px] border-collapse table-fixed">
+          <thead className="bg-slate-50 font-black text-[9px] text-slate-400 uppercase tracking-widest border-b border-slate-100 sticky top-0 z-10">
+            <tr>
+              <th className="px-4 py-3 w-[60px]">Status</th>
+              <th className="px-4 py-3 w-[100px]">Case ID</th>
+              <th className="px-4 py-3 w-[180px]">Test Name</th>
+              <th className="px-4 py-3 w-[180px]">Goal Name</th>
+              <th className="px-4 py-3 w-[100px]">HW Config</th>
+              <th className="px-4 py-3 w-[80px]">SW Config</th>
+              <th className="px-4 py-3 w-[120px]">SUT Node</th>
+              <th className="px-4 py-3 w-[80px]">Duration</th>
+              <th className="px-4 py-3 w-[100px] text-right">Selection</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {paginatedTestLines.map((line, i) => (
+              <tr key={i} className="hover:bg-slate-50/50 transition-colors group">
+                <td className="px-4 py-3">
+                  <div className={`w-2 h-2 rounded-full ${line.status === 'Passed' ? 'bg-emerald-500' : line.status === 'Failed' ? 'bg-rose-500' : line.status === 'Running' ? 'bg-blue-500' : 'bg-slate-200'}`} />
+                </td>
+                <td className="px-4 py-3 mono font-black text-slate-400">{line.id}</td>
+                <td className="px-4 py-3 font-bold text-slate-800 truncate" title={line.name}>{line.name}</td>
+                <td className="px-4 py-3 font-medium text-slate-600 truncate" title={line.goalName}>{line.goalName}</td>
+                <td className="px-4 py-3 font-medium text-slate-500 mono text-[10px]">{line.hwConfig}</td>
+                <td className="px-4 py-3 font-medium text-slate-500 mono text-[10px]">{line.swConfig}</td>
+                <td className="px-4 py-3 font-medium text-slate-500 truncate">{line.sut}</td>
+                <td className="px-4 py-3 mono text-slate-400">{line.duration}</td>
+                <td className="px-4 py-3 text-right">
+                  <button 
+                    disabled={currentTestPhase !== 'REVIEW'}
+                    onClick={() => toggleIncludeTest(line.id)}
+                    className={`px-2 py-0.5 rounded text-[8px] font-black uppercase transition-all ${line.included ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}
+                  >
+                    {line.included ? 'Included' : 'Excluded'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {paginatedTestLines.length === 0 && (
+              <tr>
+                <td colSpan={9} className="p-10 text-center italic text-slate-400 text-[12px]">No testlines match the current aggregation filter.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls 
+        page={testLinesPage} 
+        total={totalTestLinesPages} 
+        onPageChange={setTestLinesPage} 
+        count={filteredTestLines.length} 
+        perPage={ITEMS_PER_PAGE} 
+      />
+    </div>
+  );
+
   const renderTestStepView = () => {
     const phase = currentTestPhase;
     const isDiscovery = phase === 'DISCOVERY';
@@ -493,11 +542,50 @@ const App: React.FC = () => {
       ];
     }, [phase, testLines]);
 
+    if (isTestMatrixFullView) {
+      return (
+        <div className="flex flex-col h-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+           <div className="flex items-center justify-between mb-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0">
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setIsTestMatrixFullView(false)}
+                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors"
+                  title="Return to Workflow View"
+                >
+                  <svg className="w-5 h-5 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7-7 7M5 12h16" /></svg>
+                </button>
+                <div className="flex flex-col">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">DRIVE REVIEW</span>
+                  <h2 className="text-[14px] font-black text-slate-800 uppercase tracking-tight">Testlines Execution Matrix</h2>
+                </div>
+                {matrixFilter && (
+                   <div className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                      <span className="text-[8px] font-black text-blue-600 uppercase tracking-widest">ACTIVE FILTER</span>
+                      <span className="text-[10px] font-bold text-blue-800 uppercase truncate max-w-[200px]">{matrixFilter.goal} | {matrixFilter.hw}</span>
+                      <button onClick={() => setMatrixFilter(null)} className="text-blue-400 hover:text-blue-600"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                   </div>
+                )}
+              </div>
+              <div className="flex items-center gap-6">
+                 {['Passed', 'Failed', 'Running', 'Pending'].map(s => (
+                   <div key={s} className="flex items-center gap-2">
+                     <div className={`w-2.5 h-2.5 rounded-full ${s === 'Passed' ? 'bg-emerald-500' : s === 'Failed' ? 'bg-rose-500' : s === 'Running' ? 'bg-blue-500' : 'bg-slate-200'}`} />
+                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{s}: <span className="text-slate-800">{testLines.filter(t => t.status === s).length}</span></span>
+                   </div>
+                 ))}
+              </div>
+           </div>
+           <div className="flex-1 overflow-hidden border border-slate-200 rounded-xl shadow-lg bg-white">
+              {renderTestMatrixContent(true)}
+           </div>
+        </div>
+      );
+    }
+
     const activeIndex = TEST_PHASE_ORDER.indexOf(phase);
 
     return (
       <div className="flex flex-col space-y-3 pb-20 max-w-[1600px] mx-auto animate-in fade-in duration-500 h-full overflow-hidden relative">
-        {/* Header Section */}
         <div className="flex items-center justify-between shrink-0 mb-0.5">
           <div className="flex items-center gap-4">
              <h1 className="text-[18px] font-black text-slate-800 tracking-tight uppercase shrink-0">
@@ -515,7 +603,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Critical Metrics Ribbon */}
         <div className="grid grid-cols-10 gap-3 shrink-0">
           <div className={`col-span-5 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[110px] relative transition-all duration-500 ${cardBg}`}>
              <div className="flex-1 p-2.5 px-6 flex flex-col justify-center gap-1.5">
@@ -585,11 +672,36 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-end justify-between leading-none">
-                  <div className="flex flex-col">
+                  <div className="flex flex-col relative">
                     <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">TEST STEP PHASE</span>
-                    <span className="text-[13px] font-black text-slate-800 uppercase tracking-tight">
-                      {phase.replace('_', ' ')}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-black text-slate-800 uppercase tracking-tight">
+                        {phase.replace('_', ' ')}
+                      </span>
+                      {isReview && (
+                        <div className="relative" ref={guidancePopoverRef}>
+                          <button 
+                            onClick={() => setShowReviewGuidance(!showReviewGuidance)}
+                            className={`p-0.5 rounded-full transition-all ${showReviewGuidance ? 'bg-blue-600 text-white shadow-lg scale-110' : 'text-slate-300 hover:text-blue-500 hover:bg-blue-50'}`}
+                          >
+                            <ICONS.Info className="w-3.5 h-3.5" />
+                          </button>
+                          {showReviewGuidance && (
+                            <div className="absolute left-0 top-full mt-2 w-72 bg-white rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.15)] border border-slate-200 p-5 z-[100] animate-in fade-in slide-in-from-top-2 duration-300 ring-1 ring-black/5">
+                               <div className="flex items-center gap-3 mb-3 border-b border-slate-50 pb-2">
+                                  <div className="bg-blue-600 p-1.5 rounded-lg text-white shadow-sm"><ICONS.Info className="w-3.5 h-3.5" /></div>
+                                  <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Review Guidance</h4>
+                               </div>
+                               <ul className="text-[10px] font-medium text-slate-600 space-y-2.5 list-disc pl-3">
+                                 <li>Review each test's configuration and properties before submission</li>
+                                 <li>Click on test rows to edit execution settings in the side panel</li>
+                                 <li>Click the 'Included'/'Excluded' badge to toggle a test for execution</li>
+                               </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {(isExecution || isResult || isDone) && (
                     <div className="flex flex-col items-end gap-0.5">
@@ -632,7 +744,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* KPI Dashboard - Semantically colored */}
         <div className="flex items-center gap-2 overflow-x-auto pb-0.5 no-scrollbar shrink-0 h-16">
           {kpis.map((stat, i) => {
             const label = stat.label.toLowerCase();
@@ -680,11 +791,8 @@ const App: React.FC = () => {
           )}
         </div>
 
-        {/* Content Stack */}
         <div className="flex-1 overflow-hidden relative group">
           <div ref={scrollContainerRef} onScroll={handleScroll} className="h-full overflow-y-auto space-y-3 pr-1 custom-scrollbar scroll-smooth pb-20">
-            
-            {/* Resolution Record (Visible only in DONE phase) */}
             {isDone && resOutcome && (
               <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
                 <div className={`px-5 py-3 border-b flex items-center justify-between ${resOutcome === 'PASSED' ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
@@ -705,21 +813,10 @@ const App: React.FC = () => {
                       "{resolutionReason}"
                     </p>
                   </div>
-                  <div className="flex items-center justify-between border-t border-slate-50 pt-3">
-                    <div className="flex flex-col">
-                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">RECORDED BY</span>
-                      <span className="text-[10px] font-bold text-slate-600">JD Dayan, Roni</span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">TIMESTAMP</span>
-                      <span className="text-[10px] font-bold text-slate-600 mono">{new Date().toLocaleString()}</span>
-                    </div>
-                  </div>
                 </div>
               </section>
             )}
 
-            {/* Test settings - Collapsible */}
             <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div onClick={() => toggleBuildSection('settings')} className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/30 cursor-pointer">
                 <div className="flex items-center gap-3">
@@ -740,21 +837,10 @@ const App: React.FC = () => {
                       <span className="text-[11px] font-black text-slate-800">A0</span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 divide-x divide-slate-50">
-                    <div className="flex items-center justify-between px-6 py-3.5">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">NGA PROJECT</span>
-                      <span className="text-[11px] font-black text-slate-800 uppercase">DMR_VAL_POWER</span>
-                    </div>
-                    <div className="flex items-center justify-between px-6 py-3.5">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">NGA ENVIRONMENT</span>
-                      <span className="text-[11px] font-black text-slate-800 uppercase">PROD_FARM_01</span>
-                    </div>
-                  </div>
                 </div>
               )}
             </section>
 
-            {/* Resolution Outcome Required (Phase 5) - Collapsible and Compact */}
             {isResult && (
               <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in slide-in-from-top-4 duration-500">
                 <div onClick={() => toggleBuildSection('resolution')} className="px-5 py-2.5 border-b border-amber-100 flex items-center justify-between bg-amber-50/40 cursor-pointer">
@@ -762,13 +848,7 @@ const App: React.FC = () => {
                     <div className="w-1 h-3 bg-amber-500 rounded-full" />
                     <span className="text-[10px] font-black text-amber-900 uppercase tracking-widest">Manual Resolution Requirement</span>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <div className="w-1 h-1 bg-amber-500 rounded-full animate-pulse" />
-                      <span className="text-[7px] font-black text-amber-600 uppercase tracking-tighter">WAITING FOR AUDIT</span>
-                    </div>
-                    <ICONS.ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${collapsedBuildSections.resolution ? '' : 'rotate-90'}`} />
-                  </div>
+                  <ICONS.ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${collapsedBuildSections.resolution ? '' : 'rotate-90'}`} />
                 </div>
                 {!collapsedBuildSections.resolution && (
                   <div className="animate-in slide-in-from-top-2 duration-300">
@@ -780,18 +860,12 @@ const App: React.FC = () => {
                             onClick={() => setResOutcome('PASSED')}
                             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all font-black uppercase text-[9px] ${resOutcome === 'PASSED' ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-emerald-200 hover:bg-emerald-50/20'}`}
                           >
-                            <div className={`w-3 h-3 rounded-full border-2 flex items-center justify-center shrink-0 ${resOutcome === 'PASSED' ? 'bg-white border-white' : 'border-slate-300'}`}>
-                              {resOutcome === 'PASSED' && <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full" />}
-                            </div>
                             Manual Pass
                           </button>
                           <button 
                             onClick={() => setResOutcome('FAILED')}
                             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all font-black uppercase text-[9px] ${resOutcome === 'FAILED' ? 'bg-rose-600 border-rose-600 text-white shadow-md' : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-rose-200 hover:bg-rose-50/20'}`}
                           >
-                            <div className={`w-3 h-3 rounded-full border-2 flex items-center justify-center shrink-0 ${resOutcome === 'FAILED' ? 'bg-white border-white' : 'border-slate-300'}`}>
-                              {resOutcome === 'FAILED' && <div className="w-1.5 h-1.5 bg-rose-600 rounded-full" />}
-                            </div>
                             Manual Fail
                           </button>
                         </div>
@@ -820,24 +894,6 @@ const App: React.FC = () => {
               </section>
             )}
 
-            {/* Review Guidance Banner (Phase 2) */}
-            {isReview && (
-              <div className="bg-blue-50 rounded-xl border border-blue-100 p-5 shadow-sm animate-in fade-in slide-in-from-left-2 duration-500">
-                <div className="flex items-start gap-4">
-                  <div className="bg-blue-600 p-2 rounded-lg text-white"><ICONS.Filter className="w-5 h-5" /></div>
-                  <div className="flex flex-col">
-                    <h4 className="text-[12px] font-black text-blue-900 uppercase tracking-widest mb-2">Review Guidance</h4>
-                    <ul className="text-[11px] font-medium text-blue-700/80 space-y-1 list-disc pl-4">
-                      <li>Review each test's configuration and properties before submission</li>
-                      <li>Click on test rows to edit execution settings in the side panel</li>
-                      <li>Click the 'Included'/'Excluded' badge to toggle a test for execution</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Discovery / Submission Loading Views */}
             {(isDiscovery || isSubmission) && (
               <div className="bg-white rounded-xl border border-slate-200 min-h-[400px] flex flex-col items-center justify-center p-12 animate-in zoom-in-95 duration-700">
                 <div className={`w-20 h-20 mb-8 flex items-center justify-center rounded-full bg-blue-50 border border-blue-100 text-blue-600 shadow-xl ${isDiscovery ? 'animate-pulse' : 'animate-bounce-y'}`}>
@@ -858,10 +914,8 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* Main Content (Review, Execution, Result, Done) */}
             {(isReview || isExecution || isResult || isDone) && (
               <>
-                {/* Aggregation Matrix Matrix */}
                 {(isExecution || isResult || isDone) && (
                   <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div onClick={() => toggleBuildSection('heatMap')} className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/30 cursor-pointer">
@@ -872,84 +926,34 @@ const App: React.FC = () => {
                   </section>
                 )}
 
-                {/* Test Matrix Table - Paginated */}
                 <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                  <div onClick={() => toggleBuildSection('testMatrix')} className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/30 cursor-pointer">
+                  <div onClick={() => toggleBuildSection('testMatrix')} className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/30 cursor-pointer group/header">
                     <div className="flex items-center gap-3">
                       <div className="w-1 h-3 bg-brand rounded-full" />
                       <span className="text-[11px] font-black text-slate-800 uppercase tracking-widest">
-                        Testlines Execution Matrix {matrixFilter && `(Filtered by ${matrixFilter.goal || ''} ${matrixFilter.hw || ''} ${matrixFilter.sw || ''})`}
+                        Testlines Execution Matrix {matrixFilter && `(Filtered)`}
                       </span>
                     </div>
-                    <ICONS.ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${collapsedBuildSections.testMatrix ? '' : 'rotate-90'}`} />
+                    <div className="flex items-center gap-2">
+                       <button 
+                          onClick={(e) => { e.stopPropagation(); setIsTestMatrixFullView(true); }}
+                          className="px-2 py-1 bg-slate-100 hover:bg-brand hover:text-white rounded text-[8px] font-black uppercase transition-all flex items-center gap-1 opacity-0 group-hover/header:opacity-100"
+                       >
+                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                         Expand Review View
+                       </button>
+                       <ICONS.ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${collapsedBuildSections.testMatrix ? '' : 'rotate-90'}`} />
+                    </div>
                   </div>
                   {!collapsedBuildSections.testMatrix && (
-                    <>
-                      <div className="overflow-x-auto min-h-[440px]">
-                        <table className="w-full text-left text-[11px] border-collapse table-fixed">
-                          <thead className="bg-slate-50 font-black text-[9px] text-slate-400 uppercase tracking-widest border-b border-slate-100 sticky top-0 z-10">
-                            <tr>
-                              <th className="px-4 py-3 w-[60px]">Status</th>
-                              <th className="px-4 py-3 w-[100px]">Case ID</th>
-                              <th className="px-4 py-3 w-[180px]">Test Name</th>
-                              <th className="px-4 py-3 w-[180px]">Goal Name</th>
-                              <th className="px-4 py-3 w-[100px]">HW Config</th>
-                              <th className="px-4 py-3 w-[80px]">SW Config</th>
-                              <th className="px-4 py-3 w-[120px]">SUT Node</th>
-                              <th className="px-4 py-3 w-[80px]">Duration</th>
-                              <th className="px-4 py-3 w-[100px] text-right">Selection</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-50">
-                            {paginatedTestLines.map((line, i) => (
-                              <tr key={i} className="hover:bg-slate-50/50 transition-colors group">
-                                <td className="px-4 py-3">
-                                  <div className={`w-2 h-2 rounded-full ${line.status === 'Passed' ? 'bg-emerald-500' : line.status === 'Failed' ? 'bg-rose-500' : line.status === 'Running' ? 'bg-blue-500' : 'bg-slate-200'}`} />
-                                </td>
-                                <td className="px-4 py-3 mono font-black text-slate-400">{line.id}</td>
-                                <td className="px-4 py-3 font-bold text-slate-800 truncate" title={line.name}>{line.name}</td>
-                                <td className="px-4 py-3 font-medium text-slate-600 truncate" title={line.goalName}>{line.goalName}</td>
-                                <td className="px-4 py-3 font-medium text-slate-500 mono text-[10px]">{line.hwConfig}</td>
-                                <td className="px-4 py-3 font-medium text-slate-500 mono text-[10px]">{line.swConfig}</td>
-                                <td className="px-4 py-3 font-medium text-slate-500 truncate">{line.sut}</td>
-                                <td className="px-4 py-3 mono text-slate-400">{line.duration}</td>
-                                <td className="px-4 py-3 text-right">
-                                  <button 
-                                    disabled={!isReview}
-                                    onClick={() => toggleIncludeTest(line.id)}
-                                    className={`px-2 py-0.5 rounded text-[8px] font-black uppercase transition-all ${line.included ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}
-                                  >
-                                    {line.included ? 'Included' : 'Excluded'}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <PaginationControls 
-                        page={testLinesPage} 
-                        total={totalTestLinesPages} 
-                        onPageChange={setTestLinesPage} 
-                        count={filteredTestLines.length} 
-                        perPage={ITEMS_PER_PAGE} 
-                      />
-                    </>
+                    <div className="h-[440px]">
+                      {renderTestMatrixContent()}
+                    </div>
                   )}
                 </section>
               </>
             )}
           </div>
-          {showScrollBouncer && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-700 z-50">
-               <div className="flex items-center gap-5 bg-white pl-8 pr-2 py-2 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 ring-8 ring-slate-100/30">
-                 <span className="text-[11px] font-black text-slate-800 uppercase tracking-[0.2em] whitespace-nowrap">MORE DATA BELOW</span>
-                 <div className="bg-brand text-white w-7 h-7 flex items-center justify-center rounded-full shadow-md animate-bounce-y">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
-                 </div>
-               </div>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -973,67 +977,34 @@ const App: React.FC = () => {
           </div>
         </header>
         <div className="flex-1 flex overflow-hidden">
-          <aside className={`transition-all duration-300 border-r border-slate-200 bg-white flex flex-col shrink-0 z-10 ${isWorkflowSidebarCollapsed ? 'w-20' : 'w-[280px]'}`}>
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              {!isWorkflowSidebarCollapsed && <h2 className="text-[10px] font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-2">WORKFLOW STEPS <span className="text-slate-300 ml-1">{MOCK_WORKFLOW_STEPS.length}</span></h2>}
-              <button onClick={() => setIsWorkflowSidebarCollapsed(!isWorkflowSidebarCollapsed)} className="p-1.5 hover:bg-slate-50 rounded text-slate-400">
-                <svg className={`w-4 h-4 transition-transform ${isWorkflowSidebarCollapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar bg-slate-50/20">
-              {MOCK_WORKFLOW_STEPS.map(step => {
-                const isActive = selectedStepId === step.id;
-                return (
+          {!isTestMatrixFullView && (
+            <aside className={`transition-all duration-300 border-r border-slate-200 bg-white flex flex-col shrink-0 z-10 ${isWorkflowSidebarCollapsed ? 'w-20' : 'w-[280px]'}`}>
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                {!isWorkflowSidebarCollapsed && <h2 className="text-[10px] font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-2">WORKFLOW STEPS</h2>}
+                <button onClick={() => setIsWorkflowSidebarCollapsed(!isWorkflowSidebarCollapsed)} className="p-1.5 hover:bg-slate-50 rounded text-slate-400">
+                  <svg className={`w-4 h-4 transition-transform ${isWorkflowSidebarCollapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar bg-slate-50/20">
+                {MOCK_WORKFLOW_STEPS.map(step => (
                   <button 
                     key={step.id} 
-                    onClick={() => { 
-                      setSelectedStepId(step.id); 
-                      if(step.type === 'TEST' && isActive) return; 
-                      if(step.type === 'TEST') {
-                        if (currentTestPhase !== 'DONE') {
-                           setCurrentTestPhase('DISCOVERY');
-                        }
-                      }
-                    }} 
-                    className={`
-                      group w-full text-left px-3 py-2 rounded-lg border transition-all flex items-center justify-between
-                      ${isActive 
-                        ? 'bg-white border-blue-200 shadow-sm ring-2 ring-blue-50/10 text-blue-700 font-bold' 
-                        : 'border-transparent text-slate-500 hover:bg-white hover:border-slate-100'
-                      }
-                    `}
+                    onClick={() => { setSelectedStepId(step.id); setIsTestMatrixFullView(false); }} 
+                    className={`group w-full text-left px-3 py-2 rounded-lg border transition-all flex items-center justify-between ${selectedStepId === step.id ? 'bg-white border-blue-200 shadow-sm text-blue-700 font-bold' : 'border-transparent text-slate-500 hover:bg-white hover:border-slate-100'}`}
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
-                      <div className={`
-                        shrink-0 w-5 h-5 rounded-full flex items-center justify-center
-                        ${step.status === 'Success' ? 'bg-emerald-100 text-emerald-600' : 
-                          step.status === 'In progress' ? 'bg-blue-100 text-blue-600' : 
-                          step.status === 'Failed' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}
-                      `}>
-                        {step.status === 'Success' ? (
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                        ) : step.status === 'In progress' ? (
-                          <div className="w-2.5 h-2.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <div className="w-1.5 h-1.5 bg-current rounded-full" />
-                        )}
+                      <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${step.status === 'Success' ? 'bg-emerald-100 text-emerald-600' : step.status === 'In progress' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                        {step.status === 'Success' ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> : <div className="w-1.5 h-1.5 bg-current rounded-full" />}
                       </div>
-                      {!isWorkflowSidebarCollapsed && (
-                        <div className="flex flex-col overflow-hidden">
-                          <span className="text-[10px] uppercase tracking-tight truncate">{step.name}</span>
-                          <span className="text-[7px] uppercase font-black tracking-widest text-slate-400 opacity-60">
-                            {step.type === 'UP' ? 'Unified Patch' : step.type === 'IFWI' ? 'IFWI Build' : 'Validation'}
-                          </span>
-                        </div>
-                      )}
+                      {!isWorkflowSidebarCollapsed && <span className="text-[10px] uppercase tracking-tight truncate">{step.name}</span>}
                     </div>
                   </button>
-                );
-              })}
-            </div>
-          </aside>
+                ))}
+              </div>
+            </aside>
+          )}
           <main className="flex-1 overflow-hidden relative bg-slate-50/30 px-10 py-6">
              {(() => {
                 const step = MOCK_WORKFLOW_STEPS.find(s => s.id === selectedStepId);
@@ -1047,28 +1018,17 @@ const App: React.FC = () => {
     );
   };
 
-  const renderContent = () => {
-    if (activeTab === 'Dashboard') return (
-      <div className="p-8 space-y-8 max-w-7xl mx-auto animate-in fade-in duration-500">
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Personal Workspace</h1>
-        <div className="bg-white p-12 rounded-2xl border border-slate-200 min-h-[240px] flex flex-col justify-center items-center shadow-sm">
-          <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">ACTIVE ENGINEERING RUNS</p>
-          <p className="text-6xl font-black text-blue-600 tracking-tighter">14</p>
-        </div>
-      </div>
-    );
-    return (
-      <main className="p-8 flex flex-col items-center justify-center min-h-[500px]">
-        <ICONS.VDCLogo className="w-16 h-16 opacity-10 mb-6" />
-        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">CONTEXT__{activeTab}__UNAVAILABLE</p>
-      </main>
-    );
-  };
+  const renderContent = () => (
+    <main className="p-8 flex flex-col items-center justify-center min-h-[500px]">
+      <ICONS.VDCLogo className="w-16 h-16 opacity-10 mb-6" />
+      <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">CONTEXT__{activeTab}__UNAVAILABLE</p>
+    </main>
+  );
 
   const toggleBuildSection = (section: string) => setCollapsedBuildSections(prev => ({ ...prev, [section]: !prev[section] }));
 
   const PaginationControls: React.FC<{ page: number; total: number; onPageChange: (p: number) => void; count: number; perPage: number }> = ({ page, total, onPageChange, count, perPage }) => (
-    <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50/20 shrink-0">
+    <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50/20 shrink-0 mt-auto">
       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
         Showing <span className="text-slate-800">{(page - 1) * perPage + 1}</span> to <span className="text-slate-800">{Math.min(page * perPage, count)}</span> of <span className="text-slate-800">{count}</span>
       </div>
@@ -1102,7 +1062,7 @@ const App: React.FC = () => {
         onToggle={() => setNav(p => ({ ...p, sidebarExpanded: !p.sidebarExpanded }))} 
       />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header activeContext={nav.activeContext} activeProject={activeProject} activeTab={activeTab} onToggleSidebar={() => setNav(p => ({ ...p, sidebarExpanded: !p.sidebarExpanded }))} isSidebarExpanded={nav.sidebarExpanded} />
+        <Header activeContext={nav.activeContext} activeProject={activeProject} activeTab={isTestMatrixFullView ? "Execution Matrix Review" : activeTab} onToggleSidebar={() => setNav(p => ({ ...p, sidebarExpanded: !p.sidebarExpanded }))} isSidebarExpanded={nav.sidebarExpanded} />
         <div className="flex-1 overflow-hidden">
            {activeTab === 'Quick Builds' || activeTab === 'Workflows' ? renderWorkflowRunView() : renderContent()}
         </div>
